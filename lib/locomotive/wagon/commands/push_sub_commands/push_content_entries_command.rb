@@ -14,12 +14,80 @@ module Locomotive::Wagon
     end
 
     def entities
-      @entities ||= repositories.content_type.all.map do |content_type|
+      content_types = repositories.content_type.all.to_a
+      sorted_content_types = content_types.sort { |x,y| (r = -(x.display_settings['position'] <=> y.display_settings['position'])).zero? ? x.name <=> y.name : r }
+      @entities ||= sorted_content_types.map do |content_type|
         # bypass a locale if there is no fields marked as localized
         next if locale? && content_type.fields.localized_names.blank?
 
-        repositories.content_entry.with(content_type).all
+        list = repositories.content_entry.with(content_type).all
+        validate_entities(content_type, list)
       end.compact.flatten
+    end
+
+    def validate_entities(content_type, entities)
+      instrument :validation, message: content_type.name
+
+      #binding.pry
+
+      # przygotuj liste definicji wymaganych pol
+      required_fields = content_type.try(:entries_custom_fields).try(:adapter).collection.select { |x| x[:required] }
+      # utworz tablice z nazwami wymaganych pol
+      field_names = required_fields.map { |x| x[:name] }
+      # iteruj po wszystkich rekordach i sprawdzaj czy wymagane pola nie sa puste
+      entities.each do |entity|
+        data = entity.to_hash
+        required_fields.each do |required_field|
+          field_name = required_field[:name]
+          if ((data.has_key?(field_name) || data.has_key?(field_name + '_id')) && (!data[field_name].nil? || !data[field_name + '_id'].nil? ))
+            ok = false
+            case required_field[:type]
+            when 'string', 'text'
+              if data[field_name].respond_to? :strip
+                ok = !data[field_name].strip.empty?
+              elsif data[field_name].is_a? Locomotive::Steam::Models::I18nField
+                ok = true
+                data[field_name].to_hash.each do |translation|
+                  if translation.nil? || translation.last.strip.empty?
+                    ok = false
+                    break
+                  end
+                end
+              else
+                puts "error: unknown class for 'string' field type"
+              end
+            when 'file'
+              if !data[field_name].filename.nil? && !data[field_name].filename.empty?
+                file_name = File.join( 'public', data[field_name].filename)
+                ok = File.exists? file_name
+                if !ok
+                  puts "error: file_name doesn't exists: #{file_name}"
+                end
+              end
+            when 'integer'
+              ok = data[field_name].is_a? Fixnum
+            when 'select'
+              ok = !data[field_name + '_id'].strip.empty?
+            when 'boolean'
+              ok = (data[field_name] == true || data[field_name] == false)
+            when 'date_time'
+              ok = data[field_name].is_a? DateTime
+            when 'date'
+              ok = data[field_name].is_a? Date
+            when 'float'
+              ok = data[field_name].is_a? Float
+            else
+              # binding.pry
+              # typ pola nieobsluzony
+              puts "unknown field tye"
+            end
+            next if ok
+          end
+          instrument :persist_with_error, message: "required field '#{field_name}' is missed\n\nrequired_fields: #{required_field}\n\ndata: #{data}"
+          raise SkipPersistingException.new
+        end
+      end
+      entities
     end
 
     def decorate(entity)
