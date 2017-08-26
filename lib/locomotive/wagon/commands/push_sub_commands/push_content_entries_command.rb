@@ -4,11 +4,12 @@ module Locomotive::Wagon
 
     attr_reader :step
 
-    alias_method :default_push, :_push
+    alias_method :default_push, :_push_multithread
 
     def _push
       ([:without_relationships] + other_locales + [:only_relationships]).each do |step|
         @step = step
+        puts "STEP :#{step}"
         default_push
       end
     end
@@ -27,8 +28,6 @@ module Locomotive::Wagon
 
     def validate_entities(content_type, entities)
       instrument :validation, message: content_type.name
-
-      #binding.pry
 
       # przygotuj liste definicji wymaganych pol
       required_fields = content_type.try(:entries_custom_fields).try(:adapter).collection.select { |x| x[:required] }
@@ -77,7 +76,6 @@ module Locomotive::Wagon
             when 'float'
               ok = data[field_name].is_a? Float
             else
-              # binding.pry
               # typ pola nieobsluzony
               puts "unknown field tye"
             end
