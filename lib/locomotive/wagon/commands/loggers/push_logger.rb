@@ -34,6 +34,11 @@ module Locomotive::Wagon
         log ' [' + 'failed'.colorize(:red) + ']'
         log event.payload[:message], :red, 4
       end
+
+      subscribe :validation do |event|
+        log "Validation: #{event.payload[:message]}", :grey
+      end
+
     end
 
     private
