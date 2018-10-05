@@ -40,20 +40,29 @@ module Locomotive::Wagon
 
     private
 
-    def find_unique_filepath(filepath, binary_file, index = 1)
-      if File.exists?(filepath)
+    def find_unique_filepath(startfilepath, binary_file, index = 1)
+      filepath = startfilepath
+
+      while File.exists?(filepath)
         # required because we need to make sure we use the content of file from its start
         binary_file.rewind
 
+        # return the same name if existed file has the same content
         return filepath if FileUtils.compare_stream(binary_file, File.open(filepath))
 
-        folder, ext = File.dirname(filepath), File.extname(filepath)
-        basename = File.basename(filepath, ext)
+        folder, ext = File.dirname(startfilepath), File.extname(startfilepath)
+        basename = File.basename(startfilepath, ext)
+    
+        prevfilepath = filepath
+        # set new file path with adding index i.e. "1-1.jpg"; if exists check for: "1-2.jpg", "1-3.jpg"..., "1-10.jpg" etc
+        filepath = File.join(folder, "#{basename}-%.5d#{ext}" % index)
 
-        find_unique_filepath(File.join(folder, "#{basename}-#{index}#{ext}"), binary_file, index + 1)
-      else
-        filepath
+        puts "Info => file '#{prevfilepath}' exists. Trying change it to '#{filepath}'"
+        
+        index += 1
       end
+
+      filepath
     end
 
     def get_asset_binary(url)
